@@ -4,11 +4,11 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
-from datetime import timedelta, datetime
-from GoogleNews import GoogleNews 
-
-# 뉴스 객체 생성 (한국어 뉴스 설정)
-googlenews = GoogleNews(lang='ko', period='1d')
+from datetime import timedelta, datetime, timezone
+from email.utils import parsedate_to_datetime
+import urllib.request
+import urllib.parse
+import xml.etree.ElementTree as ET
 
 # 1. 페이지 기본 설정
 st.set_page_config(page_title="실시간 주식 차트 대시보드 Ver 3.1", layout="wide")
@@ -459,33 +459,63 @@ def render_charts(ticker_list, title):
                 
                 st.plotly_chart(fig, use_container_width=True)
 
-                # 실시간 뉴스 렌더링
+                # 실시간 뉴스 렌더링 (Google RSS 파싱 방식 - KST 시간 적용 완료)
                 if show_news:
                     with st.expander(f"📰 [{ticker}] 실시간 핵심 뉴스 보기"):
                         try:
                             query = kor_name if kor_name else ticker
-                            googlenews.clear()
-                            googlenews.search(query)
-                            news_list = googlenews.result()
+                            encoded_query = urllib.parse.quote(query)
                             
-                            if news_list:
+                            # 구글 뉴스 한국어 RSS 피드 URL 생성 (최근 1일 데이터)
+                            rss_url = f"https://news.google.com/rss/search?q={encoded_query}+when:1d&hl=ko&gl=KR&ceid=KR:ko"
+                            
+                            # 봇 차단을 방지하기 위해 User-Agent 추가
+                            req = urllib.request.Request(rss_url, headers={'User-Agent': 'Mozilla/5.0'})
+                            
+                            with urllib.request.urlopen(req) as response:
+                                xml_data = response.read()
+                                
+                            root = ET.fromstring(xml_data)
+                            items = root.findall('.//item')
+                            
+                            if items:
                                 seen_titles = set()
                                 display_count = 0
-                                for news in news_list:
-                                    title = news.get("title", "제목 없음")
-                                    if title not in seen_titles:
-                                        seen_titles.add(title)
-                                        link = news.get("link", "#")
-                                        date = news.get("date", "")
-                                        date_str = f" ({date})" if date else ""
-                                        st.markdown(f"- **[{title}]({link})**{date_str}")
-                                        display_count += 1
-                                    if display_count >= 3: break
-                                if display_count == 0: st.write("최근 검색된 새로운 뉴스가 없습니다.")
+                                for item in items:
+                                    title_elem = item.find('title')
+                                    link_elem = item.find('link')
+                                    pub_date_elem = item.find('pubDate')
+                                    
+                                    if title_elem is not None and link_elem is not None:
+                                        title = title_elem.text
+                                        if title not in seen_titles:
+                                            seen_titles.add(title)
+                                            link = link_elem.text
+                                            pub_date = pub_date_elem.text if pub_date_elem is not None else ""
+                                            
+                                            # GMT 시간을 KST로 변환 적용
+                                            if pub_date:
+                                                try:
+                                                    dt = parsedate_to_datetime(pub_date)
+                                                    kst_timezone = timezone(timedelta(hours=9))
+                                                    dt_kst = dt.astimezone(kst_timezone)
+                                                    pub_date = dt_kst.strftime('%Y-%m-%d %H:%M:%S KST')
+                                                except Exception:
+                                                    pass
+
+                                            date_str = f" ({pub_date})" if pub_date else ""
+                                            st.markdown(f"- **[{title}]({link})**{date_str}")
+                                            display_count += 1
+                                            
+                                    if display_count >= 3: 
+                                        break
+                                        
+                                if display_count == 0: 
+                                    st.write("최근 검색된 새로운 뉴스가 없습니다.")
                             else:
                                 st.write("최근 검색된 뉴스가 없습니다.")
-                        except:
-                            st.write("뉴스를 불러오는 중 오류가 발생했습니다.")
+                        except Exception as e:
+                            st.write(f"뉴스를 불러오는 중 오류가 발생했습니다: {e}")
 
             except Exception as e:
                 st.error(f"[{ticker}] 차트 오류: {e}")
