@@ -10,14 +10,15 @@ import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
 
-# 1. 페이지 기본 설정 및 여백 최소화
-st.set_page_config(page_title="실시간 주식 차트 대시보드 Ver 3.9", layout="wide")
+st.set_page_config(page_title="실시간 주식 차트 대시보드 Ver 4.1", layout="wide")
 
 st.markdown("""
     <style>
         .block-container {
             padding-top: 3rem !important; 
             padding-bottom: 0rem !important;
+            padding-left: 2rem !important;
+            padding-right: 2rem !important;
         }
         
         [data-testid="stMain"] div[data-testid="stExpander"]:first-of-type {
@@ -78,8 +79,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# --- 데이터 스마트 캐싱 ---
-
 @st.cache_data(ttl=3600)
 def get_usd_krw_rate():
     try:
@@ -91,9 +90,9 @@ def get_usd_krw_rate():
 usd_to_krw = get_usd_krw_rate()
 
 @st.cache_data(ttl=10)
-def get_history_data(ticker, period, interval):
+def get_history_data(ticker, period, interval, prepost=False):
     try:
-        return yf.Ticker(ticker).history(period=period, interval=interval)
+        return yf.Ticker(ticker).history(period=period, interval=interval, prepost=prepost)
     except:
         return pd.DataFrame()
 
@@ -125,20 +124,19 @@ def get_kor_name(ticker):
         return ""
 
 
-# 2. 사이드바 영역 구성
 with st.sidebar:
-    st.markdown("### 📈 주식 차트 대시보드 V3.9")
+    st.markdown("### 📈 주식 차트 대시보드 V4.1")
     
-    with st.expander("✨ V3.9 패치 내용 보기"):
+    with st.expander("✨ V4.1 패치 내용 보기"):
         st.markdown(
             """
-            - **갱신 시간 버그 완벽 수정:** iframe 간 통신을 `window.parent` 공유 변수 방식으로 교체
-            - **상단바 편입:** 시장 지수 패널을 상단 헤더로 이동시켜 스크롤 박멸
+            - **차트 상하 중앙 정렬:** 캔들이 차트 정중앙에 배치되도록 Y축 범위 최적화
+            - **시간외 거래 토글:** 프리마켓/애프터마켓 ON/OFF (기본: OFF)
+            - **예측선 단위 버그 수정**
+            - **갱신 시간 동기화 완료**
             """
         )
 
-    # 🔥 시계 + 갱신시간을 하나의 iframe 안에 통합! 
-    # 1초마다 부모 창의 메모장(window.parent._lastRefreshTime)을 확인하여 갱신 시간을 읽어옴
     clock_html = """
     <style>
         .clock-container {
@@ -155,11 +153,13 @@ with st.sidebar:
             font-size: 14px; 
             margin-top: -2px;
         }
+        @media (prefers-color-scheme: light) {
+            .clock-container { color: #31333F; }
+        }
     </style>
     <div class="clock-container" id="live-clock">⏰ 현재 시간: 로딩중...</div>
     <div class="refresh-container" id="last-refresh">🔄 마지막 갱신: 로딩중...</div>
     <script>
-        // 초기 갱신 시간 설정
         var initTime = new Date().toLocaleTimeString('ko-KR', { hour12: false });
         document.getElementById('last-refresh').innerHTML = '🔄 마지막 갱신: ' + initTime;
         try { window.parent._lastRefreshTime = initTime; } catch(e) {}
@@ -168,8 +168,6 @@ with st.sidebar:
             var now = new Date();
             var timeStr = now.toLocaleTimeString('ko-KR', { hour12: false });
             document.getElementById('live-clock').innerHTML = '⏰ 현재 시간: ' + timeStr;
-            
-            // 부모 창의 메모장에 새 갱신 시간이 적혀있는지 매초 확인
             try {
                 var refreshTime = window.parent._lastRefreshTime;
                 if (refreshTime) {
@@ -227,6 +225,9 @@ st.query_params["show_macd"] = str(show_macd)
 show_news = st.sidebar.checkbox("📰 실시간 종목 뉴스 표시", value=get_bool_param("show_news", True))
 st.query_params["show_news"] = str(show_news)
 
+show_prepost = st.sidebar.checkbox("🌙 미국 시간외 거래(프리/애프터) 표시", value=get_bool_param("show_prepost", False))
+st.query_params["show_prepost"] = str(show_prepost)
+
 st.sidebar.markdown("---")
 st.sidebar.subheader("⏱️ 자동 새로고침 설정")
 refresh_sec = st.sidebar.number_input("자동 새로고침 간격(초)", min_value=10, max_value=600, value=60, step=10)
@@ -245,7 +246,6 @@ st.sidebar.markdown(
 )
 
 
-# --- 차트 렌더링 함수 ---
 def render_charts(ticker_list, title, is_us_market=False):
     if not ticker_list:
         st.info(f"{title}에 해당하는 종목이 없습니다.")
@@ -259,7 +259,8 @@ def render_charts(ticker_list, title, is_us_market=False):
     for idx, ticker in enumerate(ticker_list):
         with tabs[idx]:
             try:
-                df = get_history_data(ticker, period, interval).copy()
+                use_prepost = is_us_market and show_prepost
+                df = get_history_data(ticker, period, interval, prepost=use_prepost).copy()
                 if df.empty:
                     st.warning(f"[{ticker}] 데이터를 불러올 수 없습니다.")
                     continue
@@ -376,6 +377,8 @@ def render_charts(ticker_list, title, is_us_market=False):
                     df['Low'] = df['Low'] * usd_to_krw
                     df['Close'] = df['Close'] * usd_to_krw
                     prev_krw = prev_close_usd_or_krw * usd_to_krw if prev_close_usd_or_krw else None
+                    if future_y:
+                        future_y = [y * usd_to_krw for y in future_y]
                 else:
                     prev_krw = prev_close_usd_or_krw
 
@@ -514,7 +517,21 @@ def render_charts(ticker_list, title, is_us_market=False):
                     legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1)
                 )
                 
-                fig.update_yaxes(title_text="가격", tickformat="₩,", row=1, col=1)
+                # 🔥 캔들 데이터 기준으로 Y축 범위를 잡아서 상하 중앙 정렬
+                if use_prepost:
+                    # 시간외 거래 ON → 튀는 데이터 제거
+                    y_min = df['Low'].quantile(0.02)
+                    y_max = df['High'].quantile(0.98)
+                else:
+                    # 정규장만 → 그대로
+                    y_min = df['Low'].min()
+                    y_max = df['High'].max()   
+                y_padding = (y_max - y_min) * 0.5
+                fig.update_yaxes(
+                    title_text="가격", tickformat="₩,",
+                    range=[y_min - y_padding, y_max + y_padding],
+                    row=1, col=1
+                )
                 fig.update_yaxes(title_text="거래량", row=2, col=1)
                 fig.update_yaxes(title_text="RSI", range=[0, 100], row=3, col=1)
                 
@@ -583,12 +600,10 @@ def render_charts(ticker_list, title, is_us_market=False):
             except Exception as e:
                 st.error(f"[{ticker}] 차트 오류: {e}")
 
-# --- 메인 화면 렌더링 ---
+
 @st.fragment(run_every=int(refresh_sec))
 def render_dynamic_dashboard():
 
-    # 🔥 Fragment가 갱신될 때마다 부모 창의 '메모장'에 현재 시간을 적어둠
-    # → 사이드바 시계가 1초마다 이 메모장을 확인해서 갱신 시간을 자동 업데이트!
     force_run_key = datetime.now().timestamp()
     updater_html = f"""
     <script>
