@@ -144,13 +144,12 @@ with st.sidebar:
             """
             - **레이아웃 혁신:** 제목/현재가/평단가를 1줄로 통합!
             - **상단바 편입:** 시장 지수 패널을 상단 헤더로 이동시켜 스크롤 박멸
-            - **시간 동기화:** 서버 위치 무관하게 한국 시간(KST)으로 갱신 시간 고정
+            - **시간 완벽 동기화:** 갱신 시간을 서버가 아닌 사용자 접속 기기(스마트폰/PC) 시간과 100% 일치
             """
         )
 
-    # 🔥 서버 위치(UTC)와 상관없이 무조건 한국 시간(KST)으로 고정
-    kst = timezone(timedelta(hours=9))
-    current_refresh_time = datetime.now(kst).strftime('%H:%M:%S')
+    # 🔥 서버 시계 오차를 무시하고 무조건 '접속한 사람 기기' 시간으로 강제 동기화하기 위한 난수키
+    force_remount_key = datetime.now().timestamp()
     
     clock_html = """
     <style>
@@ -166,13 +165,26 @@ with st.sidebar:
             font-weight: bold; 
             text-align: center; 
             padding: 5px;
-            margin-top: 10px;
+            margin-top: 5px;
+        }
+        .refresh-container {
+            text-align: center; 
+            color: gray; 
+            font-size: 14px; 
+            margin-top: -5px;
         }
     </style>
-    <div class="clock-container" id="live-clock">
-        ⏰ 현재 시간: 로딩중...
-    </div>
+    <div class="clock-container" id="live-clock">⏰ 현재 시간: 로딩중...</div>
+    <div class="refresh-container" id="last-refresh">🔄 마지막 갱신: 로딩중...</div>
     <script>
+        /* 파이썬이 새로고침될 때마다 HTML 영역을 강제로 다시 그리게 만드는 난수: """ + str(force_remount_key) + """ */
+        
+        // 1. 화면이 갱신되는 바로 그 순간의 '접속자 기기(PC/폰) 시계'를 읽어와서 고정
+        const loadTime = new Date();
+        const refreshStr = loadTime.toLocaleTimeString('ko-KR', { hour12: false });
+        document.getElementById('last-refresh').innerHTML = '🔄 마지막 갱신: ' + refreshStr;
+
+        // 2. 1초마다 째깍거리는 현재 시간 시계
         function updateClock() {
             const now = new Date();
             const timeStr = now.toLocaleTimeString('ko-KR', { hour12: false });
@@ -182,8 +194,7 @@ with st.sidebar:
         updateClock();
     </script>
     """
-    st.components.v1.html(clock_html, height=35)
-    st.markdown(f"<div style='text-align: center; color: gray; font-size: 14px; margin-top:-10px;'>🔄 마지막 갱신: {current_refresh_time}</div>", unsafe_allow_html=True)
+    st.components.v1.html(clock_html, height=60)
     st.markdown("---")
 
 st.sidebar.header("⚙️ 차트 설정")
@@ -426,6 +437,7 @@ def render_charts(ticker_list, title, is_us_market=False):
                     elif param_key in st.query_params:
                         del st.query_params[param_key]
 
+                # 🔥 차트 높이 미세 조정 (스크롤 방지용 580px 유지)
                 rows_count = 4 if show_macd else 3
                 row_heights = [0.45, 0.15, 0.15, 0.25] if show_macd else [0.6, 0.2, 0.2]
                 chart_height = 580 if show_macd else 480 
@@ -590,6 +602,7 @@ def render_charts(ticker_list, title, is_us_market=False):
 # --- 메인 화면 렌더링 ---
 @st.fragment(run_every=int(refresh_sec))
 def render_dynamic_dashboard():
+    # 이 Expander는 CSS 마법을 통해 맨 위쪽 헤더(Nav-bar)로 공중부양 됩니다.
     with st.expander("🌐 주요 시장 지수 및 환율 열어보기"):
         index_symbols = {"코스피": "^KS11", "코스닥": "^KQ11", "S&P 500": "^GSPC", "나스닥": "^IXIC"}
         
