@@ -11,7 +11,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 
 # 1. 페이지 기본 설정 및 여백 최소화
-st.set_page_config(page_title="실시간 주식 차트 대시보드 Ver 3.7", layout="wide")
+st.set_page_config(page_title="실시간 주식 차트 대시보드 Ver 3.8", layout="wide")
 
 st.markdown("""
     <style>
@@ -137,13 +137,13 @@ def get_kor_name(ticker):
 
 # 2. 사이드바 영역 구성
 with st.sidebar:
-    st.markdown("### 📈 주식 차트 대시보드 V3.7")
+    st.markdown("### 📈 주식 차트 대시보드 V3.8")
     
-    with st.expander("✨ V3.7 패치 내용 보기"):
+    with st.expander("✨ V3.8 패치 내용 보기"):
         st.markdown(
             """
             - **상단바 편입:** 시장 지수 패널을 상단 헤더로 이동시켜 스크롤 박멸
-            - **시간 완벽 동기화:** 차트가 자동 갱신(1분)될 때마다 갱신 시간도 PC시간으로 실시간 업데이트
+            - **시간 갱신 버그 픽스:** 스트림릿 캐싱을 우회하는 난수를 삽입하여 1분마다 무조건 시계 동기화 성공!
             """
         )
 
@@ -587,15 +587,17 @@ def render_charts(ticker_list, title, is_us_market=False):
 @st.fragment(run_every=int(refresh_sec))
 def render_dynamic_dashboard():
 
-    # 🔥 차트(Fragment)가 갱신될 때마다 사이드바의 시계 쪽으로 투명 신호를 보내 시간을 강제로 맞춤
-    updater_html = """
+    # 🔥 차트가 갱신될 때마다 스크립트를 '무조건' 다시 실행시키기 위해, 매번 바뀌는 난수(시간)를 코드에 섞어 넣음!
+    force_run_key = datetime.now().timestamp()
+    updater_html = f"""
     <script>
+        /* 강제 실행용 난수: {force_run_key} */
         const now = new Date();
-        const timeStr = now.toLocaleTimeString('ko-KR', { hour12: false });
+        const timeStr = now.toLocaleTimeString('ko-KR', {{ hour12: false }});
         const target = window.parent.document.getElementById('last-refresh-target');
-        if (target) {
+        if (target) {{
             target.innerHTML = '🔄 마지막 갱신: ' + timeStr;
-        }
+        }}
     </script>
     """
     st.components.v1.html(updater_html, height=0)
