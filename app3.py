@@ -21,7 +21,7 @@ st.markdown("""
             padding-right: 2rem !important;
         }
         
-        [data-testid="stMain"] div[data-testid="stExpander"]:first-of-type {
+        [data-testid="stMain"] [data-testid="stExpander"]:has(#index-expander-marker) {
             position: absolute !important;
             top: 0.3rem !important;      
             left: 3.5rem !important;     
@@ -29,7 +29,7 @@ st.markdown("""
             z-index: 999999 !important;  
         }
         
-        [data-testid="stMain"] div[data-testid="stExpander"]:first-of-type details {
+        [data-testid="stMain"] [data-testid="stExpander"]:has(#index-expander-marker) details {
             background-color: var(--background-color, #1E1E1E) !important;
             border: 1px solid var(--secondary-background-color, #444) !important;
             border-radius: 8px;
@@ -122,6 +122,44 @@ def get_kor_name(ticker):
         return t_info.get('shortName') or t_info.get('longName', "")
     except:
         return ""
+
+@st.cache_data(ttl=300)
+def get_news(ticker, kor_name):
+    try:
+        query = kor_name if kor_name else ticker
+        encoded_query = urllib.parse.quote(query)
+        rss_url = f"https://news.google.com/rss/search?q={encoded_query}+when:1d&hl=ko&gl=KR&ceid=KR:ko"
+        req = urllib.request.Request(rss_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req) as response:
+            xml_data = response.read()
+        root = ET.fromstring(xml_data)
+        items = root.findall('.//item')
+        news_list = []
+        if items:
+            seen_titles = set()
+            for item in items:
+                title_elem = item.find('title')
+                link_elem = item.find('link')
+                pub_date_elem = item.find('pubDate')
+                if title_elem is not None and link_elem is not None:
+                    title = title_elem.text
+                    if title not in seen_titles:
+                        seen_titles.add(title)
+                        link = link_elem.text
+                        pub_date = pub_date_elem.text if pub_date_elem is not None else ""
+                        if pub_date:
+                            try:
+                                dt = parsedate_to_datetime(pub_date)
+                                kst_timezone = timezone(timedelta(hours=9))
+                                pub_date = dt.astimezone(kst_timezone).strftime('%m-%d %H:%M')
+                            except: pass
+                        news_list.append({"title": title, "link": link, "date": pub_date})
+                        if len(news_list) >= 3:
+                            break
+        return news_list
+    except:
+        return []
+
 
 
 with st.sidebar:
@@ -616,6 +654,7 @@ def render_dynamic_dashboard():
     st.components.v1.html(updater_html, height=0)
 
     with st.expander("🌐 주요 시장 지수 및 환율 열어보기"):
+        st.markdown("<div id='index-expander-marker'></div>", unsafe_allow_html=True)
         index_symbols = {"코스피": "^KS11", "코스닥": "^KQ11", "S&P 500": "^GSPC", "나스닥": "^IXIC"}
         
         idx_cols = st.columns(5)
