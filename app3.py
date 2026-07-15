@@ -15,22 +15,22 @@ st.set_page_config(page_title="실시간 주식 차트 대시보드 Ver 3.6", la
 
 st.markdown("""
     <style>
-        /* 메인 화면 상하단 여백 최소화 (사이드바 버튼 공간 확보를 위해 3rem 유지) */
+        /* 메인 화면 상하단 여백 최소화 */
         .block-container {
             padding-top: 3rem !important; 
             padding-bottom: 0rem !important;
         }
         
-        /* 🔥 핵심 마법: 첫 번째 Expander(시장 지수)를 뜯어내서 사이드바 버튼(>) 옆으로 강제 이동! */
+        /* 🔥 첫 번째 Expander(시장 지수)를 뜯어내서 사이드바 버튼(>) 옆으로 강제 이동 */
         [data-testid="stMain"] div[data-testid="stExpander"]:first-of-type {
             position: absolute !important;
-            top: 0.3rem !important;      /* 사이드바 버튼과 수평(높이) 정렬 */
-            left: 3.5rem !important;     /* 사이드바 버튼을 가리지 않도록 우측으로 띄움 */
-            width: calc(100% - 4.5rem) !important; /* 남은 가로 폭 꽉 채우기 */
-            z-index: 999999 !important;  /* 가장 위로 띄워서 다른 요소와 겹치지 않게 함 */
+            top: 0.3rem !important;      
+            left: 3.5rem !important;     
+            width: calc(100% - 4.5rem) !important; 
+            z-index: 999999 !important;  
         }
         
-        /* 띄워진 지수 박스가 열렸을 때, 뒷배경(차트 등)이 비치지 않게 불투명하게 처리 */
+        /* 띄워진 지수 박스가 열렸을 때 배경색 불투명 처리 */
         [data-testid="stMain"] div[data-testid="stExpander"]:first-of-type details {
             background-color: var(--background-color, #1E1E1E) !important;
             border: 1px solid var(--secondary-background-color, #444) !important;
@@ -39,7 +39,7 @@ st.markdown("""
             margin: 0 !important;
         }
         
-        /* 메뉴 및 Deploy 버튼 숨김 (사이드바 버튼은 건드리지 않음) */
+        /* 메뉴 및 Deploy 버튼 숨김 */
         #MainMenu { visibility: hidden; }
         .stDeployButton { display: none; }
         [data-testid="stAppDeployButton"] { display: none !important; }
@@ -143,13 +143,15 @@ with st.sidebar:
         st.markdown(
             """
             - **레이아웃 혁신:** 제목/현재가/평단가를 1줄로 통합!
-            - **상단바 편입:** 시장 지수 패널을 상단 헤더로 이동시켜 스크롤 완전 박멸
-            - **버튼 복구:** 사이드바 원복 버튼 완벽 보존
-            - **성능 향상:** 탭 전환 시 버벅임 100% 제거
+            - **상단바 편입:** 시장 지수 패널을 상단 헤더로 이동시켜 스크롤 박멸
+            - **시간 동기화:** 서버 위치 무관하게 한국 시간(KST)으로 갱신 시간 고정
             """
         )
 
-    current_refresh_time = datetime.now().strftime('%H:%M:%S')
+    # 🔥 서버 위치(UTC)와 상관없이 무조건 한국 시간(KST)으로 고정
+    kst = timezone(timedelta(hours=9))
+    current_refresh_time = datetime.now(kst).strftime('%H:%M:%S')
+    
     clock_html = """
     <style>
         @media (prefers-color-scheme: dark) {
@@ -382,7 +384,7 @@ def render_charts(ticker_list, title, is_us_market=False):
 
                 curr_krw = df['Close'].iloc[-1]
 
-                # 🌟 극한의 상단 공간 절약 🌟
+                # 🌟 상단 1줄 가로 배치
                 col_title, col_price, col_input = st.columns([2.5, 1, 1])
                 
                 with col_title:
@@ -424,7 +426,6 @@ def render_charts(ticker_list, title, is_us_market=False):
                     elif param_key in st.query_params:
                         del st.query_params[param_key]
 
-                # 🔥 차트 높이 미세 조정 (스크롤 방지용 580px 유지)
                 rows_count = 4 if show_macd else 3
                 row_heights = [0.45, 0.15, 0.15, 0.25] if show_macd else [0.6, 0.2, 0.2]
                 chart_height = 580 if show_macd else 480 
@@ -589,7 +590,6 @@ def render_charts(ticker_list, title, is_us_market=False):
 # --- 메인 화면 렌더링 ---
 @st.fragment(run_every=int(refresh_sec))
 def render_dynamic_dashboard():
-    # 이 Expander는 CSS 마법을 통해 맨 위쪽 헤더(Nav-bar)로 공중부양 됩니다.
     with st.expander("🌐 주요 시장 지수 및 환율 열어보기"):
         index_symbols = {"코스피": "^KS11", "코스닥": "^KQ11", "S&P 500": "^GSPC", "나스닥": "^IXIC"}
         
