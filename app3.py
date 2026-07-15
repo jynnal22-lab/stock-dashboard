@@ -11,17 +11,15 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 
 # 1. 페이지 기본 설정 및 여백 최소화
-st.set_page_config(page_title="실시간 주식 차트 대시보드 Ver 3.8", layout="wide")
+st.set_page_config(page_title="실시간 주식 차트 대시보드 Ver 3.9", layout="wide")
 
 st.markdown("""
     <style>
-        /* 메인 화면 상하단 여백 최소화 */
         .block-container {
             padding-top: 3rem !important; 
             padding-bottom: 0rem !important;
         }
         
-        /* 🔥 첫 번째 Expander(시장 지수)를 뜯어내서 사이드바 버튼(>) 옆으로 강제 이동 */
         [data-testid="stMain"] div[data-testid="stExpander"]:first-of-type {
             position: absolute !important;
             top: 0.3rem !important;      
@@ -30,7 +28,6 @@ st.markdown("""
             z-index: 999999 !important;  
         }
         
-        /* 띄워진 지수 박스가 열렸을 때 배경색 불투명 처리 */
         [data-testid="stMain"] div[data-testid="stExpander"]:first-of-type details {
             background-color: var(--background-color, #1E1E1E) !important;
             border: 1px solid var(--secondary-background-color, #444) !important;
@@ -39,23 +36,19 @@ st.markdown("""
             margin: 0 !important;
         }
         
-        /* 메뉴 및 Deploy 버튼 숨김 */
         #MainMenu { visibility: hidden; }
         .stDeployButton { display: none; }
         [data-testid="stAppDeployButton"] { display: none !important; }
         
-        /* 사이드바 내부 상단 여백 축소 */
         [data-testid="stSidebarUserContent"] {
             padding-top: 1rem !important;
         }
         
-        /* 라디오 버튼(시장 선택) 상하 여백 완벽 밀착 */
         div.row-widget.stRadio > div {
             margin-top: -10px;
             margin-bottom: -20px;
         }
         
-        /* 탭 상단/하단 여백 밀착 및 내부 숨은 여백 날리기 */
         .stTabs {
             margin-top: -15px;
         }
@@ -66,7 +59,6 @@ st.markdown("""
             padding-top: 0rem !important;
         }
         
-        /* AI 코멘트 박스(info, warning) 압축 */
         .stAlert {
             padding-top: 0.2rem !important;
             padding-bottom: 0.2rem !important;
@@ -74,13 +66,11 @@ st.markdown("""
             margin-bottom: 0px !important;
         }
         
-        /* 종목명 (####) 하단 여백 축소 */
         h4 {
             padding-bottom: 0px !important;
             margin-bottom: 0px !important;
         }
         
-        /* 메트릭(현재가) 텍스트 크기 및 간격 조정 */
         [data-testid="stMetricValue"] {
             font-size: 1.5rem;
         }
@@ -88,7 +78,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# --- 데이터 스마트 캐싱 (버벅임 방지) ---
+# --- 데이터 스마트 캐싱 ---
 
 @st.cache_data(ttl=3600)
 def get_usd_krw_rate():
@@ -137,49 +127,61 @@ def get_kor_name(ticker):
 
 # 2. 사이드바 영역 구성
 with st.sidebar:
-    st.markdown("### 📈 주식 차트 대시보드 V3.8")
+    st.markdown("### 📈 주식 차트 대시보드 V3.9")
     
-    with st.expander("✨ V3.8 패치 내용 보기"):
+    with st.expander("✨ V3.9 패치 내용 보기"):
         st.markdown(
             """
+            - **갱신 시간 버그 완벽 수정:** iframe 간 통신을 `window.parent` 공유 변수 방식으로 교체
             - **상단바 편입:** 시장 지수 패널을 상단 헤더로 이동시켜 스크롤 박멸
-            - **시간 갱신 버그 픽스:** 스트림릿 캐싱을 우회하는 난수를 삽입하여 1분마다 무조건 시계 동기화 성공!
             """
         )
 
+    # 🔥 시계 + 갱신시간을 하나의 iframe 안에 통합! 
+    # 1초마다 부모 창의 메모장(window.parent._lastRefreshTime)을 확인하여 갱신 시간을 읽어옴
     clock_html = """
     <style>
-        @media (prefers-color-scheme: dark) {
-            .clock-container { color: #E0E0E0; }
-        }
-        @media (prefers-color-scheme: light) {
-            .clock-container { color: #31333F; }
-        }
         .clock-container {
+            color: #E0E0E0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
             font-size: 16px; 
             font-weight: bold; 
             text-align: center; 
-            padding: 5px;
-            margin-top: 5px;
+            padding: 3px 0;
+        }
+        .refresh-container {
+            text-align: center; 
+            color: gray; 
+            font-size: 14px; 
+            margin-top: -2px;
         }
     </style>
     <div class="clock-container" id="live-clock">⏰ 현재 시간: 로딩중...</div>
+    <div class="refresh-container" id="last-refresh">🔄 마지막 갱신: 로딩중...</div>
     <script>
-        // 1. 1초마다 째깍거리는 현재 시간 시계
+        // 초기 갱신 시간 설정
+        var initTime = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+        document.getElementById('last-refresh').innerHTML = '🔄 마지막 갱신: ' + initTime;
+        try { window.parent._lastRefreshTime = initTime; } catch(e) {}
+
         function updateClock() {
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString('ko-KR', { hour12: false });
+            var now = new Date();
+            var timeStr = now.toLocaleTimeString('ko-KR', { hour12: false });
             document.getElementById('live-clock').innerHTML = '⏰ 현재 시간: ' + timeStr;
+            
+            // 부모 창의 메모장에 새 갱신 시간이 적혀있는지 매초 확인
+            try {
+                var refreshTime = window.parent._lastRefreshTime;
+                if (refreshTime) {
+                    document.getElementById('last-refresh').innerHTML = '🔄 마지막 갱신: ' + refreshTime;
+                }
+            } catch(e) {}
         }
         setInterval(updateClock, 1000);
         updateClock();
     </script>
     """
-    st.components.v1.html(clock_html, height=35)
-    
-    # 🔥 이 HTML 요소는 1분마다 도는 메인 화면(Fragment)이 자바스크립트 신호를 보내서 강제로 시간을 업데이트함!
-    st.markdown("<div id='last-refresh-target' style='text-align: center; color: gray; font-size: 14px; margin-top:-10px;'>🔄 마지막 갱신: 로딩중...</div>", unsafe_allow_html=True)
+    st.components.v1.html(clock_html, height=55)
     st.markdown("---")
 
 st.sidebar.header("⚙️ 차트 설정")
@@ -278,7 +280,6 @@ def render_charts(ticker_list, title, is_us_market=False):
                 rs = avg_gain / avg_loss
                 df['RSI'] = 100 - (100 / (1 + rs))
                 
-                # --- AI 추세선 및 코멘트 사전 계산 ---
                 current_rsi = df['RSI'].iloc[-1]
                 lookback = min(len(df), 20)
                 pct_slope = 0.0
@@ -380,7 +381,6 @@ def render_charts(ticker_list, title, is_us_market=False):
 
                 curr_krw = df['Close'].iloc[-1]
 
-                # 🌟 상단 1줄 가로 배치
                 col_title, col_price, col_input = st.columns([2.5, 1, 1])
                 
                 with col_title:
@@ -587,22 +587,19 @@ def render_charts(ticker_list, title, is_us_market=False):
 @st.fragment(run_every=int(refresh_sec))
 def render_dynamic_dashboard():
 
-    # 🔥 차트가 갱신될 때마다 스크립트를 '무조건' 다시 실행시키기 위해, 매번 바뀌는 난수(시간)를 코드에 섞어 넣음!
+    # 🔥 Fragment가 갱신될 때마다 부모 창의 '메모장'에 현재 시간을 적어둠
+    # → 사이드바 시계가 1초마다 이 메모장을 확인해서 갱신 시간을 자동 업데이트!
     force_run_key = datetime.now().timestamp()
     updater_html = f"""
     <script>
-        /* 강제 실행용 난수: {force_run_key} */
-        const now = new Date();
-        const timeStr = now.toLocaleTimeString('ko-KR', {{ hour12: false }});
-        const target = window.parent.document.getElementById('last-refresh-target');
-        if (target) {{
-            target.innerHTML = '🔄 마지막 갱신: ' + timeStr;
-        }}
+        /* {force_run_key} */
+        try {{
+            window.parent._lastRefreshTime = new Date().toLocaleTimeString('ko-KR', {{hour12: false}});
+        }} catch(e) {{}}
     </script>
     """
     st.components.v1.html(updater_html, height=0)
 
-    # 이 Expander는 CSS 마법을 통해 맨 위쪽 헤더(Nav-bar)로 공중부양 됩니다.
     with st.expander("🌐 주요 시장 지수 및 환율 열어보기"):
         index_symbols = {"코스피": "^KS11", "코스닥": "^KQ11", "S&P 500": "^GSPC", "나스닥": "^IXIC"}
         
