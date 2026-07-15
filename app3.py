@@ -11,7 +11,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 
 # 1. 페이지 기본 설정 및 여백 최소화
-st.set_page_config(page_title="실시간 주식 차트 대시보드 Ver 3.6", layout="wide")
+st.set_page_config(page_title="실시간 주식 차트 대시보드 Ver 3.7", layout="wide")
 
 st.markdown("""
     <style>
@@ -137,20 +137,16 @@ def get_kor_name(ticker):
 
 # 2. 사이드바 영역 구성
 with st.sidebar:
-    st.markdown("### 📈 주식 차트 대시보드 V3.6")
+    st.markdown("### 📈 주식 차트 대시보드 V3.7")
     
-    with st.expander("✨ V3.6 패치 내용 보기"):
+    with st.expander("✨ V3.7 패치 내용 보기"):
         st.markdown(
             """
-            - **레이아웃 혁신:** 제목/현재가/평단가를 1줄로 통합!
             - **상단바 편입:** 시장 지수 패널을 상단 헤더로 이동시켜 스크롤 박멸
-            - **시간 완벽 동기화:** 갱신 시간을 서버가 아닌 사용자 접속 기기(스마트폰/PC) 시간과 100% 일치
+            - **시간 완벽 동기화:** 차트가 자동 갱신(1분)될 때마다 갱신 시간도 PC시간으로 실시간 업데이트
             """
         )
 
-    # 🔥 서버 시계 오차를 무시하고 무조건 '접속한 사람 기기' 시간으로 강제 동기화하기 위한 난수키
-    force_remount_key = datetime.now().timestamp()
-    
     clock_html = """
     <style>
         @media (prefers-color-scheme: dark) {
@@ -167,24 +163,10 @@ with st.sidebar:
             padding: 5px;
             margin-top: 5px;
         }
-        .refresh-container {
-            text-align: center; 
-            color: gray; 
-            font-size: 14px; 
-            margin-top: -5px;
-        }
     </style>
     <div class="clock-container" id="live-clock">⏰ 현재 시간: 로딩중...</div>
-    <div class="refresh-container" id="last-refresh">🔄 마지막 갱신: 로딩중...</div>
     <script>
-        /* 파이썬이 새로고침될 때마다 HTML 영역을 강제로 다시 그리게 만드는 난수: """ + str(force_remount_key) + """ */
-        
-        // 1. 화면이 갱신되는 바로 그 순간의 '접속자 기기(PC/폰) 시계'를 읽어와서 고정
-        const loadTime = new Date();
-        const refreshStr = loadTime.toLocaleTimeString('ko-KR', { hour12: false });
-        document.getElementById('last-refresh').innerHTML = '🔄 마지막 갱신: ' + refreshStr;
-
-        // 2. 1초마다 째깍거리는 현재 시간 시계
+        // 1. 1초마다 째깍거리는 현재 시간 시계
         function updateClock() {
             const now = new Date();
             const timeStr = now.toLocaleTimeString('ko-KR', { hour12: false });
@@ -194,7 +176,10 @@ with st.sidebar:
         updateClock();
     </script>
     """
-    st.components.v1.html(clock_html, height=60)
+    st.components.v1.html(clock_html, height=35)
+    
+    # 🔥 이 HTML 요소는 1분마다 도는 메인 화면(Fragment)이 자바스크립트 신호를 보내서 강제로 시간을 업데이트함!
+    st.markdown("<div id='last-refresh-target' style='text-align: center; color: gray; font-size: 14px; margin-top:-10px;'>🔄 마지막 갱신: 로딩중...</div>", unsafe_allow_html=True)
     st.markdown("---")
 
 st.sidebar.header("⚙️ 차트 설정")
@@ -437,7 +422,6 @@ def render_charts(ticker_list, title, is_us_market=False):
                     elif param_key in st.query_params:
                         del st.query_params[param_key]
 
-                # 🔥 차트 높이 미세 조정 (스크롤 방지용 580px 유지)
                 rows_count = 4 if show_macd else 3
                 row_heights = [0.45, 0.15, 0.15, 0.25] if show_macd else [0.6, 0.2, 0.2]
                 chart_height = 580 if show_macd else 480 
@@ -602,6 +586,20 @@ def render_charts(ticker_list, title, is_us_market=False):
 # --- 메인 화면 렌더링 ---
 @st.fragment(run_every=int(refresh_sec))
 def render_dynamic_dashboard():
+
+    # 🔥 차트(Fragment)가 갱신될 때마다 사이드바의 시계 쪽으로 투명 신호를 보내 시간을 강제로 맞춤
+    updater_html = """
+    <script>
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('ko-KR', { hour12: false });
+        const target = window.parent.document.getElementById('last-refresh-target');
+        if (target) {
+            target.innerHTML = '🔄 마지막 갱신: ' + timeStr;
+        }
+    </script>
+    """
+    st.components.v1.html(updater_html, height=0)
+
     # 이 Expander는 CSS 마법을 통해 맨 위쪽 헤더(Nav-bar)로 공중부양 됩니다.
     with st.expander("🌐 주요 시장 지수 및 환율 열어보기"):
         index_symbols = {"코스피": "^KS11", "코스닥": "^KQ11", "S&P 500": "^GSPC", "나스닥": "^IXIC"}
