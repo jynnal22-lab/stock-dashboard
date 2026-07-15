@@ -661,12 +661,19 @@ def render_dynamic_dashboard():
         for i, (name, symbol) in enumerate(index_symbols.items()):
             try:
                 idx_df = get_daily_data(symbol) 
+                if not idx_df.empty and 'Close' in idx_df.columns:
+                    idx_df = idx_df.dropna(subset=['Close'])
                 if len(idx_df) >= 2:
                     curr_idx = idx_df['Close'].iloc[-1]
                     prev_idx = idx_df['Close'].iloc[-2]
                     idx_change = curr_idx - prev_idx
                     idx_pct = (idx_change / prev_idx) * 100
-                    idx_cols[i].metric(label=name, value=f"{curr_idx:,.2f}", delta=f"{idx_change:+.2f} ({idx_pct:+.2f}%)")
+                    
+                    # float인지 확인 후 nan 처리 방지
+                    if pd.isna(curr_idx) or pd.isna(prev_idx):
+                        idx_cols[i].metric(label=name, value="데이터 없음")
+                    else:
+                        idx_cols[i].metric(label=name, value=f"{curr_idx:,.2f}", delta=f"{idx_change:+.2f} ({idx_pct:+.2f}%)")
                 else:
                     idx_cols[i].metric(label=name, value="데이터 없음")
             except:
